@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rearticulation — Articulation management for REAPER</title>
+<meta name="description" content="Rearticulation assigns a bank of articulations to each REAPER track, with plain JSON banks, an editor built into REAPER, and MIDI delay compensation.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Rearticulation — Articulation management for REAPER">
+<meta property="og:description" content="Plain JSON banks, one plugin per track, an editor inside REAPER, and MIDI delay compensation.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+
+<!--
+  TO PUBLISH — edit these before going live:
+  1. BUY_URL (script at the bottom): your Gumroad product link.
+  2. Price: search for "$XX" (2 places).
+  3. The editor screenshot is embedded (lossless WebP). Replace it when the UI changes.
+  4. Check the wording of the delay compensation section against your spec.
+-->
+
+<style>
+  :root {
+    --bg-app: #1c1c1d;
+    --bg-panel: #232324;
+    --bg-raised: #2b2b2d;
+    --bg-hover: #323234;
+    --border: #3a3a3d;
+    --border-strong: #4a4a4d;
+    --text: #e6e5e2;
+    --text-dim: #9c9a97;
+    --accent: #5b9bd1;
+    --accent-text: #0e1b24;
+    --latency: #d1975b;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 88px; }
+  body {
+    margin: 0;
+    background: var(--bg-app);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: var(--text); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+  .wrap { width: 100%; max-width: 1120px; margin-inline: auto; padding-inline: 24px; }
+  .skip { position: absolute; left: -9999px; top: 8px; background: var(--accent); color: var(--accent-text); padding: 8px 14px; border-radius: var(--radius-sm); z-index: 20; }
+  .skip:focus { left: 8px; }
+
+  h1, h2, h3 { margin: 0; font-weight: 600; }
+  h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.12; letter-spacing: -0.02em; max-width: 20ch; }
+  h3 { font-size: 20px; line-height: 1.3; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  .dim { color: var(--text-dim); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 48px; padding: 0 24px;
+    background: var(--accent); color: var(--accent-text);
+    font: 600 16px/1 var(--font-sans);
+    border: 0; border-radius: var(--radius-md);
+    text-decoration: none; cursor: pointer;
+  }
+  .btn:hover { background: var(--text); color: var(--accent-text); }
+  .btn--sm { min-height: 38px; padding: 0 16px; font-size: 15px; }
+  .link-quiet { color: var(--text); text-decoration-color: var(--border-strong); }
+  .link-quiet:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+  /* Header */
+  header.top { position: sticky; top: 0; z-index: 10; background: var(--bg-app); border-bottom: 1px solid var(--border); }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; min-height: 64px; gap: 24px; }
+  .brand { font-weight: 600; font-size: 18px; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
+  nav.links { display: flex; align-items: center; gap: 28px; }
+  nav.links a:not(.btn) { color: var(--text-dim); text-decoration: none; font-size: 15px; }
+  nav.links a:not(.btn):hover { color: var(--text); }
+  @media (max-width: 720px) { nav.links a:not(.btn) { display: none; } }
+
+  /* Hero */
+  .hero { padding-block: clamp(56px, 9vw, 112px) 0; }
+  .hero h1 { font-size: clamp(30px, 9.2vw, 120px); line-height: .95; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+  .hero .lede { margin-top: 28px; font-size: clamp(20px, 2.4vw, 26px); line-height: 1.35; letter-spacing: -0.01em; max-width: 30ch; }
+  .hero .body { margin-top: 20px; max-width: 58ch; color: var(--text-dim); }
+  .cta-row { margin-top: 36px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+  .band { margin-top: clamp(48px, 7vw, 80px); border-radius: var(--radius-lg); overflow: hidden; }
+  .band svg { display: block; width: 100%; height: auto; }
+  .b-accent { fill: var(--accent); }
+  .b-latency { fill: var(--latency); }
+  .b-strong { fill: var(--border-strong); }
+  .b-tint { fill: var(--text-dim); }
+  .note { fill: var(--bg-app); rx: 4px; }
+  /* The one moment of motion: the orange notes are the same rhythm, replayed later. */
+  .echo { transform: translateX(512px); animation: replay 1.4s cubic-bezier(.3,.1,.2,1) .7s both; }
+  @keyframes replay { from { transform: translateX(0); } to { transform: translateX(512px); } }
+
+  /* Sections */
+  .sec { padding-block: clamp(72px, 10vw, 128px) 0; }
+
+  /* Features: a spec list, one row per feature */
+  .feats { margin-top: 48px; }
+  .feat { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px 48px; padding-block: 28px; border-top: 1px solid var(--border); }
+  .feat:last-child { border-bottom: 1px solid var(--border); }
+  .feat p { color: var(--text-dim); max-width: 56ch; }
+  @media (max-width: 760px) { .feat { grid-template-columns: 1fr; } }
+
+  /* Delay section */
+  .delay { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 40px 56px; align-items: start; }
+  .delay p { color: var(--text-dim); max-width: 46ch; }
+  .delay p + p { margin-top: 16px; }
+  .delay h2 { margin-bottom: 24px; }
+  .lanes { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; }
+  .lanes svg { display: block; width: 100%; height: auto; }
+  .lanes text { font-family: var(--font-sans); font-size: 13px; fill: var(--text-dim); }
+  .lanes .mono { font-family: var(--font-mono); fill: var(--latency); font-size: 13px; }
+  .lane-bg { fill: var(--bg-app); }
+  .pill-a { fill: var(--accent); }
+  .pill-l { fill: var(--latency); }
+  .guide { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+  .bracket { stroke: var(--latency); stroke-width: 1.5; fill: none; }
+  @media (max-width: 860px) { .delay { grid-template-columns: 1fr; } }
+
+  /* Steps */
+  .steps { margin: 48px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; counter-reset: step; }
+  .steps li { counter-increment: step; }
+  .steps li::before {
+    content: counter(step);
+    display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 20px;
+    border: 1px solid var(--border-strong); border-radius: 50%;
+    font-weight: 600; font-size: 15px; color: var(--text);
+  }
+  .steps h3 { margin-bottom: 8px; }
+  .steps p { color: var(--text-dim); }
+  @media (max-width: 760px) { .steps { grid-template-columns: 1fr; gap: 28px; } }
+
+  /* Editor screenshot */
+  .shot-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 32px; }
+  .shot-head p { color: var(--text-dim); max-width: 44ch; }
+  .shot { margin: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-app); }
+  .shot-scroll { overflow-x: auto; }
+  .shot img { display: block; width: 100%; min-width: 760px; height: auto; }
+
+  /* Buy */
+  .buy { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 40px 64px; align-items: center; }
+  .buy p.dim { margin-top: 20px; max-width: 46ch; }
+  .price-card { background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 32px; }
+  .price { font-size: 56px; line-height: 1; font-weight: 600; letter-spacing: -0.03em; }
+  .price small { display: block; margin-top: 8px; font-size: 15px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); }
+  .price-card ul { margin: 24px 0 28px; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .price-card li { padding-left: 22px; position: relative; font-size: 16px; }
+  .price-card li::before { content: ""; position: absolute; left: 0; top: .6em; width: 10px; height: 6px; border-radius: 3px; background: var(--accent); }
+  .price-card .btn { width: 100%; }
+  .price-card .req { margin-top: 16px; color: var(--text-dim); font-size: 14px; }
+  @media (max-width: 860px) { .buy { grid-template-columns: 1fr; } }
+
+  /* FAQ */
+  .faq { margin-top: 40px; max-width: 760px; }
+  .faq details { border-top: 1px solid var(--border); }
+  .faq details:last-child { border-bottom: 1px solid var(--border); }
+  .faq summary { list-style: none; cursor: pointer; padding: 20px 40px 20px 0; font-weight: 500; font-size: 18px; position: relative; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; position: absolute; right: 4px; top: 16px; font-size: 26px; font-weight: 400; color: var(--text-dim); line-height: 1.2; }
+  .faq details[open] summary::after { content: "\2212"; color: var(--accent); }
+  .faq details p { padding: 0 40px 22px 0; color: var(--text-dim); max-width: 62ch; }
+
+  /* Footer */
+  footer { margin-top: clamp(72px, 10vw, 128px); border-top: 1px solid var(--border); padding-block: 32px 48px; color: var(--text-dim); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 32px; }
+  footer p { max-width: 62ch; }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .echo { animation: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top">Rearticulation</a>
+    <nav class="links" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#delay">Delay compensation</a>
+      <a href="#how">How it works</a>
+      <a href="#faq">FAQ</a>
+      <a class="btn btn--sm" href="#buy" data-buy>Buy now</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <!-- Hero -->
+  <section class="hero" id="top">
+    <div class="wrap">
+      <h1>Rearticulation</h1>
+      <p class="lede">Manage orchestral articulations in REAPER with plain JSON banks.</p>
+      <p class="body">Assign a bank of articulations to each track, edit it in a window that lives inside REAPER, and let Rearticulation re-time your MIDI so every articulation lands where you played it.</p>
+      <div class="cta-row">
+        <a class="btn" href="#buy" data-buy>Buy Rearticulation for $XX</a>
+        <a class="link-quiet" href="#how">See how it works</a>
+      </div>
+
+      <div class="band" aria-hidden="true">
+        <svg viewBox="0 0 960 112" preserveAspectRatio="xMidYMid meet">
+          <rect class="b-accent" x="0" y="0" width="528" height="112"/>
+          <rect class="b-latency" x="528" y="0" width="240" height="112"/>
+          <rect class="b-strong" x="768" y="0" width="96" height="112"/>
+          <rect class="b-tint" x="864" y="0" width="96" height="112"/>
+          <!-- played notes -->
+          <g>
+            <rect class="note" x="32" y="16" width="64" height="8"/><rect class="note" x="128" y="16" width="32" height="8"/><rect class="note" x="192" y="16" width="96" height="8"/><rect class="note" x="320" y="16" width="48" height="8"/><rect class="note" x="416" y="16" width="64" height="8"/>
+            <rect class="note" x="64" y="40" width="32" height="8"/><rect class="note" x="112" y="40" width="80" height="8"/><rect class="note" x="224" y="40" width="48" height="8"/><rect class="note" x="304" y="40" width="64" height="8"/><rect class="note" x="400" y="40" width="80" height="8"/>
+            <rect class="note" x="32" y="64" width="96" height="8"/><rect class="note" x="160" y="64" width="32" height="8"/><rect class="note" x="224" y="64" width="64" height="8"/><rect class="note" x="352" y="64" width="80" height="8"/><rect class="note" x="448" y="64" width="48" height="8"/>
+            <rect class="note" x="80" y="88" width="48" height="8"/><rect class="note" x="144" y="88" width="64" height="8"/><rect class="note" x="256" y="88" width="32" height="8"/><rect class="note" x="320" y="88" width="96" height="8"/><rect class="note" x="432" y="88" width="64" height="8"/>
+          </g>
+          <!-- the same first bars, re-emitted later -->
+          <g class="echo">
+            <rect class="note" x="32" y="16" width="64" height="8"/><rect class="note" x="128" y="16" width="32" height="8"/>
+            <rect class="note" x="64" y="40" width="32" height="8"/><rect class="note" x="112" y="40" width="80" height="8"/>
+            <rect class="note" x="32" y="64" width="96" height="8"/><rect class="note" x="160" y="64" width="32" height="8"/>
+            <rect class="note" x="80" y="88" width="48" height="8"/><rect class="note" x="144" y="88" width="64" height="8"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="sec" id="features">
+    <div class="wrap">
+      <h2>Built around how you already work in REAPER</h2>
+      <div class="feats">
+        <div class="feat">
+          <h3>Banks are plain JSON files</h3>
+          <p>One file per bank. Open it in any text editor, keep it in version control, or send it to a collaborator. Nothing is locked inside a project.</p>
+        </div>
+        <div class="feat">
+          <h3>One plugin per track</h3>
+          <p>A JSFX MIDI plugin on each track holds its bank assignment. Copy and paste the plugin between tracks and the assignment comes with it.</p>
+        </div>
+        <div class="feat">
+          <h3>An editor inside REAPER</h3>
+          <p>Open the editor from the plugin to create banks and edit articulations without leaving your project. It is built with ReaImGui, so there is no separate app to launch.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Delay compensation -->
+  <section class="sec" id="delay">
+    <div class="wrap delay">
+      <div>
+        <h2>Notes land where you played them</h2>
+        <p>Some instruments respond later to some articulations. Rearticulation holds MIDI events back and re-emits them at a shifted time, so the sound arrives where you played it.</p>
+        <p>It works on MIDI events only. Your audio is never touched.</p>
+      </div>
+      <div class="lanes">
+        <svg viewBox="0 0 560 190" role="img" aria-label="Two rows of notes: the notes you play in blue, and the same notes sent to the instrument slightly later in orange.">
+          <text x="560" y="14" text-anchor="end">You play</text>
+          <rect class="lane-bg" x="0" y="24" width="560" height="44" rx="6"/>
+          <text x="560" y="112" text-anchor="end">Rearticulation sends</text>
+          <rect class="lane-bg" x="0" y="122" width="560" height="44" rx="6"/>
+
+          <line class="guide" x1="40" y1="46" x2="40" y2="144"/>
+          <line class="guide" x1="96" y1="46" x2="96" y2="144"/>
+
+          <rect class="pill-a" x="40" y="39" width="64" height="14" rx="7"/>
+          <rect class="pill-a" x="132" y="39" width="36" height="14" rx="7"/>
+          <rect class="pill-a" x="204" y="39" width="88" height="14" rx="7"/>
+          <rect class="pill-a" x="332" y="39" width="48" height="14" rx="7"/>
+          <rect class="pill-a" x="412" y="39" width="72" height="14" rx="7"/>
+
+          <rect class="pill-l" x="96" y="137" width="64" height="14" rx="7"/>
+          <rect class="pill-l" x="188" y="137" width="36" height="14" rx="7"/>
+          <rect class="pill-l" x="260" y="137" width="88" height="14" rx="7"/>
+          <rect class="pill-l" x="388" y="137" width="48" height="14" rx="7"/>
+          <rect class="pill-l" x="468" y="137" width="72" height="14" rx="7"/>
+
+          <path class="bracket" d="M40 98 v6 h56 v-6"/>
+          <text class="mono" x="106" y="104">delay</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="sec" id="how">
+    <div class="wrap">
+      <h2>From bank to track in three steps</h2>
+      <ol class="steps">
+        <li>
+          <h3>Create or pick a bank</h3>
+          <p>Describe an instrument’s articulations in a JSON file, or open the editor and build the bank there.</p>
+        </li>
+        <li>
+          <h3>Add the plugin to a track</h3>
+          <p>Insert the JSFX on a track and assign the bank. Copy the plugin to other tracks that use the same instrument.</p>
+        </li>
+        <li>
+          <h3>Edit whenever you need to</h3>
+          <p>Launch the editor from the plugin, change an articulation, and keep working in the same project.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Editor preview (illustrative) -->
+  <section class="sec" id="editor">
+    <div class="wrap">
+      <div class="shot-head">
+        <h2>The editor</h2>
+        <p>Every articulation in a bank, with its own latency, velocity range, exclusion group, note length and the MIDI messages it sends.</p>
+      </div>
+      <figure class="shot">
+        <div class="shot-scroll">
+          <img src="data:image/webp;base64,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" width="1370" height="887" loading="lazy" decoding="async"
+               alt="The Rearticulation editor showing a brass bank. On the left, a filterable list of 18 articulations, each with its latency. On the right, the settings of the selected articulation: output velocity range, exclusion group, latency, note length, and the MIDI messages it sends.">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Buy -->
+  <section class="sec" id="buy">
+    <div class="wrap buy">
+      <div>
+        <h2>Get Rearticulation</h2>
+        <p class="dim">Set up your first bank, assign it to a track, and hear the difference on the next take.</p>
+      </div>
+      <div class="price-card">
+        <div class="price">$XX<small>Rearticulation for REAPER</small></div>
+        <ul>
+          <li>JSFX MIDI plugin for track assignment</li>
+          <li>Bank editor built with ReaImGui</li>
+          <li>MIDI delay compensation</li>
+        </ul>
+        <a class="btn" href="#buy" data-buy>Buy now</a>
+        <p class="req">Requires REAPER and the ReaImGui extension.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="sec" id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <div class="faq">
+        <details>
+          <summary>What do I need to run it?</summary>
+          <p>REAPER and the ReaImGui extension, which is free and installs through ReaPack. The track plugin is a JSFX, which REAPER runs natively.</p>
+        </details>
+        <details>
+          <summary>Can I import my .reabank files?</summary>
+          <p>No. Rearticulation uses its own JSON format and does not read .reabank files.</p>
+        </details>
+        <details>
+          <summary>Does it change my audio?</summary>
+          <p>No. Delay compensation shifts MIDI events only. Audio streams are never touched.</p>
+        </details>
+        <details>
+          <summary>Is it a fork of Reaticulate?</summary>
+          <p>No. Rearticulation is a ground-up rewrite, inspired by the open-source Reaticulate. Anything borrowed is credited under Reaticulate’s Apache 2.0 license.</p>
+        </details>
+        <details>
+          <summary>Where do I get it?</summary>
+          <p>On Gumroad. The download is available right after checkout.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Rearticulation is an independent product. REAPER is a trademark of Cockos Incorporated.</p>
+    <a href="#buy" data-buy>Buy Rearticulation</a>
+  </div>
+</footer>
+
+<script>
+  // Set your Gumroad product link here. Every "Buy" button on the page uses it.
+  var BUY_URL = ""; // e.g. "https://yourstore.gumroad.com/l/rearticulation"
+  if (BUY_URL) {
+    document.querySelectorAll("[data-buy]").forEach(function (a) { a.href = BUY_URL; });
+  }
+</script>
+</body>
+</html>
